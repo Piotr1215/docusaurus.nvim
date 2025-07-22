@@ -111,7 +111,35 @@ function M.select_code_block()
   require("telescope.builtin").find_files {
     prompt_title = "Select Code File",
     find_command = find_command,
-    path_display = { shorten = 3 },
+    layout_strategy = "flex",
+    layout_config = {
+      flex = {
+        flip_columns = 120,  -- Switch to vertical layout on smaller windows
+      },
+      horizontal = {
+        preview_width = 0.35,  -- 35% for preview on the right
+        preview_cutoff = 0,
+        prompt_position = "top",
+        mirror = false,  -- This ensures preview is on the right
+      },
+      width = 0.95,
+      height = 0.85,
+    },
+    sorting_strategy = "ascending",
+    path_display = function(opts, path)
+      -- Get the tail (filename) and calculate how much of the path we can show
+      local tail = require("telescope.utils").path_tail(path)
+      local git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
+      
+      -- Remove git root from path to make it relative
+      local relative_path = path
+      if git_root and git_root ~= "" then
+        relative_path = path:sub(#git_root + 2) -- +2 to remove the leading slash
+      end
+      
+      -- Return a formatted display with more visible path
+      return string.format("%s  [%s]", tail, relative_path)
+    end,
     attach_mappings = function(prompt_bufnr, map)
       map("i", "<CR>", function()
         local selection = require("telescope.actions.state").get_selected_entry()
@@ -392,7 +420,35 @@ function M.select_partial()
   require("telescope.builtin").find_files {
     prompt_title = "Select Partial",
     search_dirs = partials_dirs,
-    path_display = { shorten = 3 },
+    layout_strategy = "flex",
+    layout_config = {
+      flex = {
+        flip_columns = 120,  -- Switch to vertical layout on smaller windows
+      },
+      horizontal = {
+        preview_width = 0.35,  -- 35% for preview on the right
+        preview_cutoff = 0,
+        prompt_position = "top",
+        mirror = false,  -- This ensures preview is on the right
+      },
+      width = 0.95,
+      height = 0.85,
+    },
+    sorting_strategy = "ascending",
+    path_display = function(opts, path)
+      -- Get the tail (filename) and calculate how much of the path we can show
+      local tail = require("telescope.utils").path_tail(path)
+      local git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
+      
+      -- Remove git root from path to make it relative
+      local relative_path = path
+      if git_root and git_root ~= "" then
+        relative_path = path:sub(#git_root + 2) -- +2 to remove the leading slash
+      end
+      
+      -- Return a formatted display with more visible path
+      return string.format("%s  [%s]", tail, relative_path)
+    end,
     attach_mappings = function(prompt_bufnr, map)
       map("i", "<CR>", function()
         local selection = require("telescope.actions.state").get_selected_entry()
@@ -451,7 +507,40 @@ function M.insert_url_reference()
       "-path",
       "*/_*/*",
     },
-    path_display = { truncate = 3 },
+    layout_strategy = "flex",
+    layout_config = {
+      flex = {
+        flip_columns = 120,  -- Switch to vertical layout on smaller windows
+      },
+      horizontal = {
+        preview_width = 0.35,  -- 35% for preview on the right
+        preview_cutoff = 0,
+        prompt_position = "top",
+        mirror = false,  -- This ensures preview is on the right
+      },
+      width = 0.95,
+      height = 0.85,
+    },
+    sorting_strategy = "ascending",
+    path_display = function(opts, path)
+      -- Get the tail (filename) and calculate how much of the path we can show
+      local tail = require("telescope.utils").path_tail(path)
+      local git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
+      
+      -- Remove git root from path to make it relative
+      local relative_path = path
+      if git_root and git_root ~= "" then
+        relative_path = path:sub(#git_root + 2) -- +2 to remove the leading slash
+      end
+      
+      -- For URL references, also remove the leading "./"
+      if relative_path:sub(1, 2) == "./" then
+        relative_path = relative_path:sub(3)
+      end
+      
+      -- Return a formatted display with more visible path
+      return string.format("%s  [%s]", tail, relative_path)
+    end,
     attach_mappings = function(prompt_bufnr, map)
       map("i", "<CR>", function()
         local selection = require("telescope.actions.state").get_selected_entry()
