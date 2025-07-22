@@ -151,15 +151,25 @@ function M.select_code_block()
         -- Generate default component name based on the file name
         local partial_name = M.to_camel_case(partial_path)
 
-        -- Prompt for the component name with default value
-        partial_name = vim.fn.input("Name the code block: ", partial_name)
+        -- Prompt for the component name with default value using floating window
+        vim.ui.input({
+          prompt = "Name the code block: ",
+          default = partial_name,
+          completion = "file",
+        }, function(input)
+          if not input or input == "" then
+            return -- User cancelled
+          end
+          
+          partial_name = input
 
-        -- Switch back to the original window and buffer
-        vim.api.nvim_set_current_win(current_win)
-        vim.api.nvim_set_current_buf(current_bufnr)
+          -- Switch back to the original window and buffer
+          vim.api.nvim_set_current_win(current_win)
+          vim.api.nvim_set_current_buf(current_bufnr)
 
-        -- Insert code block with raw loader
-        M.insert_partial_in_buffer(current_bufnr, partial_name, partial_path, true)
+          -- Insert code block with raw loader
+          M.insert_partial_in_buffer(current_bufnr, partial_name, partial_path, true)
+        end)
       end)
       return true
     end,
@@ -386,21 +396,27 @@ local function insert_url_reference(bufnr, target_path)
   -- Generate default link text from file name
   local default_text = M.to_readable_text(target_path)
 
-  -- Prompt for link text with default value
-  local link_text = vim.fn.input("Enter link text: ", default_text)
-  if link_text == "" then
-    link_text = default_text
-  end
+  -- Prompt for link text with default value using floating window
+  vim.ui.input({
+    prompt = "Enter link text: ",
+    default = default_text,
+    completion = "file",
+  }, function(input)
+    local link_text = input or default_text
+    if link_text == "" then
+      link_text = default_text
+    end
 
-  local markdown_link = string.format("[%s](%s)", link_text, url_path)
+    local markdown_link = string.format("[%s](%s)", link_text, url_path)
 
-  -- Insert the markdown link at cursor position
-  local line_content = vim.api.nvim_buf_get_lines(bufnr, current_line - 1, current_line, false)[1]
-  local cursor_col = cursor_position[2]
+    -- Insert the markdown link at cursor position
+    local line_content = vim.api.nvim_buf_get_lines(bufnr, current_line - 1, current_line, false)[1]
+    local cursor_col = cursor_position[2]
 
-  -- Split the line at cursor position and insert the link
-  local new_line = string.sub(line_content, 1, cursor_col) .. markdown_link .. string.sub(line_content, cursor_col + 1)
-  vim.api.nvim_buf_set_lines(bufnr, current_line - 1, current_line, false, { new_line })
+    -- Split the line at cursor position and insert the link
+    local new_line = string.sub(line_content, 1, cursor_col) .. markdown_link .. string.sub(line_content, cursor_col + 1)
+    vim.api.nvim_buf_set_lines(bufnr, current_line - 1, current_line, false, { new_line })
+  end)
 end
 
 function M.select_partial()
@@ -457,18 +473,28 @@ function M.select_partial()
         -- Generate default component name based on the file name
         local partial_name = M.to_camel_case(partial_path)
 
-        -- Prompt for the component name with default value
-        partial_name = vim.fn.input("Name the partial: ", partial_name)
-
-        -- Close Telescope before switching back
+        -- Close Telescope before prompting
         require("telescope.actions").close(prompt_bufnr)
 
-        -- Switch back to the original window and buffer
-        vim.api.nvim_set_current_win(current_win)
-        vim.api.nvim_set_current_buf(current_bufnr)
+        -- Prompt for the component name with default value using floating window
+        vim.ui.input({
+          prompt = "Name the partial: ",
+          default = partial_name,
+          completion = "file",
+        }, function(input)
+          if not input or input == "" then
+            return -- User cancelled
+          end
+          
+          partial_name = input
 
-        -- Insert partial (always as regular import)
-        M.insert_partial_in_buffer(current_bufnr, partial_name, partial_path, false)
+          -- Switch back to the original window and buffer
+          vim.api.nvim_set_current_win(current_win)
+          vim.api.nvim_set_current_buf(current_bufnr)
+
+          -- Insert partial (always as regular import)
+          M.insert_partial_in_buffer(current_bufnr, partial_name, partial_path, false)
+        end)
       end)
       return true
     end,
