@@ -83,7 +83,7 @@ function M.select_code_block()
   
   -- Include common code file extensions
   local code_extensions = {
-    "*.yaml", "*.yml", "*.json", "*.js", "*.jsx", 
+    "*.yaml", "*.yml", "*.json", "*.js", "*.jsx",
     "*.ts", "*.tsx", "*.sh", "*.bash", "*.py",
     "*.go", "*.rs", "*.toml", "*.xml", "*.conf",
     "*.ini", "*.env", "*.properties", "*.sql"
@@ -104,7 +104,7 @@ function M.select_code_block()
   table.insert(find_command, "-name")
   table.insert(find_command, "*.md")
   table.insert(find_command, "!")
-  table.insert(find_command, "-name") 
+  table.insert(find_command, "-name")
   table.insert(find_command, "*.mdx")
 
   -- Use Telescope to browse code files
@@ -129,12 +129,12 @@ function M.select_code_block()
     path_display = function(opts, path)
       -- Get the tail (filename) and calculate how much of the path we can show
       local tail = require("telescope.utils").path_tail(path)
-      local git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
+      local local_git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
       
       -- Remove git root from path to make it relative
       local relative_path = path
-      if git_root and git_root ~= "" then
-        relative_path = path:sub(#git_root + 2) -- +2 to remove the leading slash
+      if local_git_root and local_git_root ~= "" then
+        relative_path = path:sub(#local_git_root + 2) -- +2 to remove the leading slash
       end
       
       -- Return a formatted display with more visible path
@@ -151,25 +151,15 @@ function M.select_code_block()
         -- Generate default component name based on the file name
         local partial_name = M.to_camel_case(partial_path)
 
-        -- Prompt for the component name with default value using floating window
-        vim.ui.input({
-          prompt = "Name the code block: ",
-          default = partial_name,
-          completion = "file",
-        }, function(input)
-          if not input or input == "" then
-            return -- User cancelled
-          end
-          
-          partial_name = input
+        -- Prompt for the component name with default value
+        partial_name = vim.fn.input("Name the code block: ", partial_name)
 
-          -- Switch back to the original window and buffer
-          vim.api.nvim_set_current_win(current_win)
-          vim.api.nvim_set_current_buf(current_bufnr)
+        -- Switch back to the original window and buffer
+        vim.api.nvim_set_current_win(current_win)
+        vim.api.nvim_set_current_buf(current_bufnr)
 
-          -- Insert code block with raw loader
-          M.insert_partial_in_buffer(current_bufnr, partial_name, partial_path, true)
-        end)
+        -- Insert code block with raw loader
+        M.insert_partial_in_buffer(current_bufnr, partial_name, partial_path, true)
       end)
       return true
     end,
@@ -250,7 +240,7 @@ local function get_language_from_extension(file_path)
   -- Common mappings where the extension doesn't match the language identifier
   local special_mappings = {
     yml = "yaml",
-    js = "javascript", 
+    js = "javascript",
     ts = "typescript",
     sh = "bash",
     py = "python",
@@ -396,27 +386,21 @@ local function insert_url_reference(bufnr, target_path)
   -- Generate default link text from file name
   local default_text = M.to_readable_text(target_path)
 
-  -- Prompt for link text with default value using floating window
-  vim.ui.input({
-    prompt = "Enter link text: ",
-    default = default_text,
-    completion = "file",
-  }, function(input)
-    local link_text = input or default_text
-    if link_text == "" then
-      link_text = default_text
-    end
+  -- Prompt for link text with default value
+  local link_text = vim.fn.input("Enter link text: ", default_text)
+  if link_text == "" then
+    link_text = default_text
+  end
 
-    local markdown_link = string.format("[%s](%s)", link_text, url_path)
+  local markdown_link = string.format("[%s](%s)", link_text, url_path)
 
-    -- Insert the markdown link at cursor position
-    local line_content = vim.api.nvim_buf_get_lines(bufnr, current_line - 1, current_line, false)[1]
-    local cursor_col = cursor_position[2]
+  -- Insert the markdown link at cursor position
+  local line_content = vim.api.nvim_buf_get_lines(bufnr, current_line - 1, current_line, false)[1]
+  local cursor_col = cursor_position[2]
 
-    -- Split the line at cursor position and insert the link
-    local new_line = string.sub(line_content, 1, cursor_col) .. markdown_link .. string.sub(line_content, cursor_col + 1)
-    vim.api.nvim_buf_set_lines(bufnr, current_line - 1, current_line, false, { new_line })
-  end)
+  -- Split the line at cursor position and insert the link
+  local new_line = string.sub(line_content, 1, cursor_col) .. markdown_link .. string.sub(line_content, cursor_col + 1)
+  vim.api.nvim_buf_set_lines(bufnr, current_line - 1, current_line, false, { new_line })
 end
 
 function M.select_partial()
@@ -454,12 +438,12 @@ function M.select_partial()
     path_display = function(opts, path)
       -- Get the tail (filename) and calculate how much of the path we can show
       local tail = require("telescope.utils").path_tail(path)
-      local git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
+      local local_git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
       
       -- Remove git root from path to make it relative
       local relative_path = path
-      if git_root and git_root ~= "" then
-        relative_path = path:sub(#git_root + 2) -- +2 to remove the leading slash
+      if local_git_root and local_git_root ~= "" then
+        relative_path = path:sub(#local_git_root + 2) -- +2 to remove the leading slash
       end
       
       -- Return a formatted display with more visible path
@@ -473,28 +457,18 @@ function M.select_partial()
         -- Generate default component name based on the file name
         local partial_name = M.to_camel_case(partial_path)
 
-        -- Close Telescope before prompting
+        -- Prompt for the component name with default value
+        partial_name = vim.fn.input("Name the partial: ", partial_name)
+
+        -- Close Telescope before switching back
         require("telescope.actions").close(prompt_bufnr)
 
-        -- Prompt for the component name with default value using floating window
-        vim.ui.input({
-          prompt = "Name the partial: ",
-          default = partial_name,
-          completion = "file",
-        }, function(input)
-          if not input or input == "" then
-            return -- User cancelled
-          end
-          
-          partial_name = input
+        -- Switch back to the original window and buffer
+        vim.api.nvim_set_current_win(current_win)
+        vim.api.nvim_set_current_buf(current_bufnr)
 
-          -- Switch back to the original window and buffer
-          vim.api.nvim_set_current_win(current_win)
-          vim.api.nvim_set_current_buf(current_bufnr)
-
-          -- Insert partial (always as regular import)
-          M.insert_partial_in_buffer(current_bufnr, partial_name, partial_path, false)
-        end)
+        -- Insert partial (always as regular import)
+        M.insert_partial_in_buffer(current_bufnr, partial_name, partial_path, false)
       end)
       return true
     end,
@@ -551,12 +525,12 @@ function M.insert_url_reference()
     path_display = function(opts, path)
       -- Get the tail (filename) and calculate how much of the path we can show
       local tail = require("telescope.utils").path_tail(path)
-      local git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
+      local local_git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
       
       -- Remove git root from path to make it relative
       local relative_path = path
-      if git_root and git_root ~= "" then
-        relative_path = path:sub(#git_root + 2) -- +2 to remove the leading slash
+      if local_git_root and local_git_root ~= "" then
+        relative_path = path:sub(#local_git_root + 2) -- +2 to remove the leading slash
       end
       
       -- For URL references, also remove the leading "./"
