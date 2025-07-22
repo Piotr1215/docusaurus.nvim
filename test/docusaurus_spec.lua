@@ -231,7 +231,7 @@ describe("docusaurus.nvim", function()
       -- Check CodeBlock component was inserted
       local has_codeblock = false
       for _, line in ipairs(lines) do
-        if line:match('<CodeBlock language="yaml".*{ConfigExample}</CodeBlock>') then
+        if line:match('<CodeBlock language="yaml".*title="config".*{ConfigExample}</CodeBlock>') then
           has_codeblock = true
         end
       end
@@ -344,6 +344,127 @@ describe("docusaurus.nvim", function()
       
       -- Reset to defaults
       docusaurus.setup({})
+    end)
+  end)
+  
+  describe("code block language detection", function()
+    local test_bufnr
+    
+    before_each(function()
+      -- Create a test buffer with frontmatter
+      test_bufnr = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(test_bufnr, 0, -1, false, {
+        "---",
+        "title: Test Document",
+        "---",
+        "",
+        "# Test Content",
+        "",
+        "Some text here",
+      })
+      vim.api.nvim_buf_set_name(test_bufnr, mock_git_root .. "/docs/test.mdx")
+      
+      -- Mock vim.api.nvim_win_get_cursor
+      vim.api.nvim_win_get_cursor = function()
+        return { 7, 0 } -- Line 7, column 0
+      end
+    end)
+    
+    after_each(function()
+      if vim.api.nvim_buf_is_valid(test_bufnr) then
+        vim.api.nvim_buf_delete(test_bufnr, { force = true })
+      end
+    end)
+    
+    it("should detect yaml language from .yaml files", function()
+      docusaurus.insert_partial_in_buffer(test_bufnr, "ConfigExample", mock_git_root .. "/docs/_partials/config.yaml", true)
+      
+      local lines = vim.api.nvim_buf_get_lines(test_bufnr, 0, -1, false)
+      local has_yaml_codeblock = false
+      for _, line in ipairs(lines) do
+        if line:match('<CodeBlock language="yaml".*{ConfigExample}</CodeBlock>') then
+          has_yaml_codeblock = true
+        end
+      end
+      assert.is_true(has_yaml_codeblock)
+    end)
+    
+    it("should detect yaml language from .yml files", function()
+      docusaurus.insert_partial_in_buffer(test_bufnr, "DockerCompose", mock_git_root .. "/docs/_partials/docker-compose.yml", true)
+      
+      local lines = vim.api.nvim_buf_get_lines(test_bufnr, 0, -1, false)
+      local has_yaml_codeblock = false
+      for _, line in ipairs(lines) do
+        if line:match('<CodeBlock language="yaml".*{DockerCompose}</CodeBlock>') then
+          has_yaml_codeblock = true
+        end
+      end
+      assert.is_true(has_yaml_codeblock)
+    end)
+    
+    it("should detect json language", function()
+      docusaurus.insert_partial_in_buffer(test_bufnr, "PackageJson", mock_git_root .. "/docs/_partials/package.json", true)
+      
+      local lines = vim.api.nvim_buf_get_lines(test_bufnr, 0, -1, false)
+      local has_json_codeblock = false
+      for _, line in ipairs(lines) do
+        if line:match('<CodeBlock language="json".*{PackageJson}</CodeBlock>') then
+          has_json_codeblock = true
+        end
+      end
+      assert.is_true(has_json_codeblock)
+    end)
+    
+    it("should detect javascript language from .js files", function()
+      docusaurus.insert_partial_in_buffer(test_bufnr, "ScriptExample", mock_git_root .. "/docs/_partials/script.js", true)
+      
+      local lines = vim.api.nvim_buf_get_lines(test_bufnr, 0, -1, false)
+      local has_js_codeblock = false
+      for _, line in ipairs(lines) do
+        if line:match('<CodeBlock language="javascript".*{ScriptExample}</CodeBlock>') then
+          has_js_codeblock = true
+        end
+      end
+      assert.is_true(has_js_codeblock)
+    end)
+    
+    it("should detect bash language from .sh files", function()
+      docusaurus.insert_partial_in_buffer(test_bufnr, "InstallScript", mock_git_root .. "/docs/_partials/install.sh", true)
+      
+      local lines = vim.api.nvim_buf_get_lines(test_bufnr, 0, -1, false)
+      local has_bash_codeblock = false
+      for _, line in ipairs(lines) do
+        if line:match('<CodeBlock language="bash".*{InstallScript}</CodeBlock>') then
+          has_bash_codeblock = true
+        end
+      end
+      assert.is_true(has_bash_codeblock)
+    end)
+    
+    it("should use extension as language for unknown types", function()
+      docusaurus.insert_partial_in_buffer(test_bufnr, "CustomConfig", mock_git_root .. "/docs/_partials/config.hcl", true)
+      
+      local lines = vim.api.nvim_buf_get_lines(test_bufnr, 0, -1, false)
+      local has_hcl_codeblock = false
+      for _, line in ipairs(lines) do
+        if line:match('<CodeBlock language="hcl".*{CustomConfig}</CodeBlock>') then
+          has_hcl_codeblock = true
+        end
+      end
+      assert.is_true(has_hcl_codeblock)
+    end)
+    
+    it("should handle case-insensitive extensions", function()
+      docusaurus.insert_partial_in_buffer(test_bufnr, "UppercaseYaml", mock_git_root .. "/docs/_partials/config.YAML", true)
+      
+      local lines = vim.api.nvim_buf_get_lines(test_bufnr, 0, -1, false)
+      local has_yaml_codeblock = false
+      for _, line in ipairs(lines) do
+        if line:match('<CodeBlock language="yaml".*{UppercaseYaml}</CodeBlock>') then
+          has_yaml_codeblock = true
+        end
+      end
+      assert.is_true(has_yaml_codeblock)
     end)
   end)
   

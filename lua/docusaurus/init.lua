@@ -66,10 +66,51 @@ function M.select_code_block()
     return
   end
 
-  -- Use Telescope to browse partial files
+  -- Build find command to exclude markdown files and focus on code files
+  local find_command = {
+    "find",
+  }
+  
+  -- Add all search directories
+  for _, dir in ipairs(partials_dirs) do
+    table.insert(find_command, dir)
+  end
+  
+  -- Add conditions to exclude markdown and include code files
+  table.insert(find_command, "-type")
+  table.insert(find_command, "f")
+  table.insert(find_command, "(")
+  
+  -- Include common code file extensions
+  local code_extensions = {
+    "*.yaml", "*.yml", "*.json", "*.js", "*.jsx", 
+    "*.ts", "*.tsx", "*.sh", "*.bash", "*.py",
+    "*.go", "*.rs", "*.toml", "*.xml", "*.conf",
+    "*.ini", "*.env", "*.properties", "*.sql"
+  }
+  
+  for i, ext in ipairs(code_extensions) do
+    if i > 1 then
+      table.insert(find_command, "-o")
+    end
+    table.insert(find_command, "-name")
+    table.insert(find_command, ext)
+  end
+  
+  table.insert(find_command, ")")
+  
+  -- Exclude markdown files explicitly
+  table.insert(find_command, "!")
+  table.insert(find_command, "-name")
+  table.insert(find_command, "*.md")
+  table.insert(find_command, "!")
+  table.insert(find_command, "-name") 
+  table.insert(find_command, "*.mdx")
+
+  -- Use Telescope to browse code files
   require("telescope.builtin").find_files {
-    prompt_title = "Select Code Block",
-    search_dirs = partials_dirs,
+    prompt_title = "Select Code File",
+    find_command = find_command,
     path_display = { shorten = 3 },
     attach_mappings = function(prompt_bufnr, map)
       map("i", "<CR>", function()
@@ -164,6 +205,25 @@ local function get_absolute_url_path(file_path)
   return url_path
 end
 
+-- Function to get language identifier from file extension
+local function get_language_from_extension(file_path)
+  local ext = vim.fn.fnamemodify(file_path, ":e"):lower()
+  
+  -- Common mappings where the extension doesn't match the language identifier
+  local special_mappings = {
+    yml = "yaml",
+    js = "javascript", 
+    ts = "typescript",
+    sh = "bash",
+    py = "python",
+    rs = "rust",
+    md = "markdown",
+  }
+  
+  -- Return the special mapping if it exists, otherwise use the extension itself
+  return special_mappings[ext] or ext
+end
+
 function M.insert_partial_in_buffer(bufnr, partial_name, partial_path, is_raw_loader)
   -- Switch to the buffer
   vim.api.nvim_set_current_buf(bufnr)
@@ -174,9 +234,11 @@ function M.insert_partial_in_buffer(bufnr, partial_name, partial_path, is_raw_lo
 
   local insert_text
   if is_raw_loader then
-    -- For raw loader, create CodeBlock component with a placeholder for language
+    -- For raw loader, create CodeBlock component with detected language
+    local language = get_language_from_extension(partial_path)
     insert_text = string.format(
-      '<CodeBlock language="yaml" title="%s">{%s}</CodeBlock>',
+      '<CodeBlock language="%s" title="%s">{%s}</CodeBlock>',
+      language,
       M.to_readable_text(partial_path),
       partial_name
     )
@@ -188,15 +250,11 @@ function M.insert_partial_in_buffer(bufnr, partial_name, partial_path, is_raw_lo
   -- Insert the component at the cursor position
   vim.api.nvim_buf_set_lines(bufnr, current_line - 1, current_line - 1, false, { insert_text })
 
-  -- If this is a code block, position cursor between the quotes of language
+  -- If this is a code block, position cursor at the end of the line
   if is_raw_loader then
-    -- Find the start of 'language="' in the line
+    -- Position cursor at the end of the inserted line
     local line_content = vim.api.nvim_buf_get_lines(bufnr, current_line - 1, current_line, false)[1]
-    local lang_start = string.find(line_content, 'language="')
-    if lang_start then
-      -- Position cursor between the quotes (add 10 to get between the quotes)
-      vim.api.nvim_win_set_cursor(0, { current_line, lang_start + 10 })
-    end
+    vim.api.nvim_win_set_cursor(0, { current_line, #line_content })
   end
 
   -- Rest of the function (imports handling) remains the same
