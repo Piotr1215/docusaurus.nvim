@@ -1,0 +1,133 @@
+*docusaurus.txt*    A Neovim plugin for Docusaurus documentation sites
+
+==============================================================================
+CONTENTS                                                    *docusaurus-contents*
+
+  1. Introduction.................................|docusaurus-introduction|
+  2. Requirements.................................|docusaurus-requirements|
+  3. Installation.................................|docusaurus-installation|
+  4. Configuration................................|docusaurus-configuration|
+  5. Commands.....................................|docusaurus-commands|
+  6. Mappings.....................................|docusaurus-mappings|
+  7. API..........................................|docusaurus-api|
+
+==============================================================================
+1. INTRODUCTION                                         *docusaurus-introduction*
+
+docusaurus.nvim is a Neovim plugin that provides convenient ways to insert
+components, partials, code blocks, and URL references in your Docusaurus MDX
+files.
+
+Features:
+- Insert components from your components directory
+- Insert partials from _partials, _fragments, or _code directories
+- Insert code blocks with raw-loader imports
+- Insert URL references to other documentation files
+- Smart import management
+- Telescope integration for browsing files
+
+==============================================================================
+2. REQUIREMENTS                                         *docusaurus-requirements*
+
+- Neovim 0.8.0 or higher
+- telescope.nvim
+- Git (for repository root detection)
+
+==============================================================================
+3. INSTALLATION                                         *docusaurus-installation*
+
+Using lazy.nvim: >lua
+  {
+    "Piotr1215/docusaurus.nvim",
+    dependencies = {
+      "nvim-telescope/telescope.nvim",
+    },
+    config = function()
+      require("docusaurus").setup({
+        components_dir = "~/your-project/src/components",
+      })
+    end,
+  }
+<
+
+==============================================================================
+4. CONFIGURATION                                       *docusaurus-configuration*
+
+Setup function accepts a table with the following options:
+
+  components_dir (optional)                            *docusaurus-components_dir*
+    Path to your Docusaurus components directory.
+    Default: {git-root}/src/components or ./src/components
+    Example: "~/project/src/components"
+
+  partials_dirs (optional)                              *docusaurus-partials_dirs*
+    List of directory names to search for partials.
+    Default: { "_partials", "_fragments", "_code" }
+
+  allowed_site_paths (optional)                    *docusaurus-allowed_site_paths*
+    List of path patterns that are allowed to use @site imports.
+    All other paths will use relative imports.
+    Default: { "^docs/_partials/", "^docs/_fragments/", "^docs/_code/" }
+
+Example configuration: >lua
+  require("docusaurus").setup({
+    components_dir = "~/vcluster-docs/src/components",
+    partials_dirs = { "_partials", "_fragments", "_code", "_snippets" },
+    allowed_site_paths = { "^docs/_partials/", "^docs/_fragments/" },
+  })
+<
+
+==============================================================================
+5. COMMANDS                                                *docusaurus-commands*
+
+:DocusaurusInsertComponent                      *:DocusaurusInsertComponent*
+    Browse and insert a component from the components directory.
+
+:DocusaurusInsertPartial                          *:DocusaurusInsertPartial*
+    Browse and insert a partial from partial directories.
+
+:DocusaurusInsertCodeBlock                      *:DocusaurusInsertCodeBlock*
+    Browse and insert a code block with raw-loader import.
+
+:DocusaurusInsertURL                                  *:DocusaurusInsertURL*
+    Insert a URL reference to another documentation file.
+
+==============================================================================
+6. MAPPINGS                                                *docusaurus-mappings*
+
+This plugin doesn't set any default mappings. You can create your own mappings
+like this:
+
+>lua
+  vim.keymap.set("n", "<leader>ic", "<cmd>DocusaurusInsertComponent<cr>", 
+    { desc = "Insert Docusaurus Component" })
+  vim.keymap.set("n", "<leader>ip", "<cmd>DocusaurusInsertPartial<cr>", 
+    { desc = "Insert Docusaurus Partial" })
+  vim.keymap.set("n", "<leader>ib", "<cmd>DocusaurusInsertCodeBlock<cr>", 
+    { desc = "Insert Docusaurus CodeBlock" })
+  vim.keymap.set("n", "<leader>iu", "<cmd>DocusaurusInsertURL<cr>", 
+    { desc = "Insert Docusaurus URL Reference" })
+<
+
+==============================================================================
+7. API                                                          *docusaurus-api*
+
+The following functions are available:
+
+docusaurus.setup({config})                                  *docusaurus.setup()*
+    Setup the plugin with the given configuration.
+
+docusaurus.select_component()                      *docusaurus.select_component()*
+    Open Telescope picker to select and insert a component.
+
+docusaurus.select_partial()                          *docusaurus.select_partial()*
+    Open Telescope picker to select and insert a partial.
+
+docusaurus.select_code_block()                    *docusaurus.select_code_block()*
+    Open Telescope picker to select and insert a code block.
+
+docusaurus.insert_url_reference()              *docusaurus.insert_url_reference()*
+    Open Telescope picker to select a file and insert URL reference.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

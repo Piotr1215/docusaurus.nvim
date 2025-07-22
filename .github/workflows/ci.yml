@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        neovim: [stable, nightly]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.neovim }}
+      
+      - name: Run tests
+        run: |
+          if ! make test; then
+            echo "::error::Tests failed on ${{ matrix.os }} with Neovim ${{ matrix.neovim }}"
+            exit 1
+          fi
+      
+      - name: Clean up
+        run: make clean
+        if: always()
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup lua
+        uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.1"
+      
+      - name: Setup luarocks
+        uses: leafo/gh-actions-luarocks@v4
+      
+      - name: Install luacheck
+        run: |
+          if ! luarocks install luacheck; then
+            echo "::error::Failed to install luacheck"
+            exit 1
+          fi
+      
+      - name: Run luacheck
+        run: |
+          # Run luacheck and capture output
+          if ! luacheck lua/ test/ --formatter plain > luacheck.log 2>&1; then
+            # Parse luacheck output and create annotations
+            while IFS= read -r line; do
+              if [[ "$line" =~ ^(.+):([0-9]+):([0-9]+):\ (.+)$ ]]; then
+                file="${BASH_REMATCH[1]}"
+                line_num="${BASH_REMATCH[2]}"
+                col="${BASH_REMATCH[3]}"
+                message="${BASH_REMATCH[4]}"
+                
+                if [[ "$message" =~ warning:\ (.+) ]]; then
+                  echo "::warning file=$file,line=$line_num,col=$col::${BASH_REMATCH[1]}"
+                elif [[ "$message" =~ error:\ (.+) ]]; then
+                  echo "::error file=$file,line=$line_num,col=$col::${BASH_REMATCH[1]}"
+                else
+                  echo "::warning file=$file,line=$line_num,col=$col::$message"
+                fi
+              fi
+            done < luacheck.log
+            
+            # Also show the full output
+            cat luacheck.log
+            exit 1
+          else
+            echo "::notice::All luacheck tests passed!"
+          fi
+
+  # Job to check that all tests pass
+  status:
+    name: CI Status
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          if [[ "${{ needs.test.result }}" == "failure" ]]; then
+            echo "::error::Tests failed"
+            exit 1
+          elif [[ "${{ needs.test.result }}" == "cancelled" ]]; then
+            echo "::warning::Tests were cancelled"
+            exit 1
+          elif [[ "${{ needs.test.result }}" == "skipped" ]]; then
+            echo "::notice::Tests were skipped"
+          else
+            echo "::notice::All tests passed successfully"
+          fi
+          
+      - name: Check lint results
+        run: |
+          if [[ "${{ needs.lint.result }}" == "failure" ]]; then
+            echo "::error::Linting failed"
+            exit 1
+          elif [[ "${{ needs.lint.result }}" == "cancelled" ]]; then
+            echo "::warning::Linting was cancelled"
+            exit 1
+          elif [[ "${{ needs.lint.result }}" == "skipped" ]]; then
+            echo "::notice::Linting was skipped"
+          else
+            echo "::notice::All linting checks passed"
+          fi
+          
+      - name: Summary
+        run: |
+          echo "## CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linting | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.test.result }}" == "success" ]] && [[ "${{ needs.lint.result }}" == "success" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ All checks passed!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Some checks failed. Please review the logs above." >> $GITHUB_STEP_SUMMARY
+          fi
