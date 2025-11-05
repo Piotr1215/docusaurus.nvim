@@ -4,7 +4,7 @@ local config = {
 	-- Default configuration options
 	partials_dirs = { "_partials", "_fragments", "_code" },
 	components_dir = nil, -- Will default to ./src/components if not set
-	allowed_site_paths = { "^docs/_partials/", "^docs/_fragments/", "^docs/_code/" },
+	allowed_site_paths = { "^docs/_" }, -- Any underscore directory under docs/
 }
 
 function M.setup(user_config)
@@ -12,12 +12,110 @@ function M.setup(user_config)
 	config = vim.tbl_deep_extend("force", config, user_config or {})
 end
 
+-- ========================================
+-- Version Context Functions
+-- ========================================
+
+-- Extract version context from file path
+-- Returns:
+--   { type="versioned", folder="vcluster_versioned_docs/version-0.20.x", project="vcluster" }
+--   { type="main", project="vcluster" } (for vcluster/ main folder)
+--   { type="non-versioned" } (for shared docs/ folder)
+local function get_version_context(file_path, git_root)
+	if not file_path or file_path == "" then
+		return { type = "non-versioned" }
+	end
+
+	-- Make path relative to git root
+	local relative_path = file_path
+	if git_root and file_path:sub(1, #git_root) == git_root then
+		relative_path = file_path:sub(#git_root + 2)
+	end
+
+	-- Pattern: <project>_versioned_docs/version-<version>/
+	-- Examples: vcluster_versioned_docs/version-0.20.x/, platform_versioned_docs/version-4.4.0/
+	local project = relative_path:match("^([^/]+)_versioned_docs/")
+	local versioned_folder = relative_path:match("^([^/]+_versioned_docs/version%-[^/]+)")
+	if project and versioned_folder then
+		return {
+			type = "versioned",
+			folder = versioned_folder,
+			project = project,
+		}
+	end
+
+	-- Pattern: main project folder (vcluster/, platform/)
+	-- These are the current/main version docs
+	if relative_path:match("^vcluster/") then
+		return {
+			type = "main",
+			project = "vcluster",
+		}
+	elseif relative_path:match("^platform/") then
+		return {
+			type = "main",
+			project = "platform",
+		}
+	end
+
+	return { type = "non-versioned" }
+end
+
+-- Check if path matches version context
+-- Paths match if they are in:
+-- 1. The same version folder (for versioned context)
+-- 2. The same main project folder (for main context)
+-- 3. Non-versioned root folders (docs/_partials/, docs/_fragments/, docs/_code/)
+local function path_matches_context(path, context, git_root)
+	if not path or path == "" then
+		return false
+	end
+
+	-- Make path relative to git root
+	local relative_path = path
+	if git_root and path:sub(1, #git_root) == git_root then
+		relative_path = path:sub(#git_root + 2)
+	end
+
+	-- Always include non-versioned root folders (docs/_partials/, etc.)
+	for _, pattern in ipairs(config.allowed_site_paths) do
+		if relative_path:match(pattern) then
+			return true
+		end
+	end
+
+	-- If no specific version/project context, show all
+	if context.type == "non-versioned" then
+		return true
+	end
+
+	-- If main project context (vcluster/, platform/), only show:
+	-- - Files from the same project's main folder
+	-- - NOT from versioned folders or other projects
+	if context.type == "main" and context.project then
+		-- Check if path is in same main project folder
+		if relative_path:match("^" .. context.project .. "/") then
+			return true
+		end
+		-- Exclude versioned folders and other projects
+		return false
+	end
+
+	-- If versioned context, only show files from same version folder
+	if context.type == "versioned" and context.folder then
+		return relative_path:sub(1, #context.folder) == context.folder
+	end
+
+	return false
+end
+
 -- Function to recursively find all _partials directories in the repository
-local function get_all_partials_dirs()
+-- Optional: filter by version context
+local function get_all_partials_dirs(version_context, git_root_param)
 	local partials_dirs = {}
 
 	-- Get git repository root
-	local git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
+	local git_root = git_root_param or vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
 
 	if git_root == "" then
 		print("Not inside a git repository.")
@@ -32,7 +130,10 @@ local function get_all_partials_dirs()
 				-- Check if directory name matches any of the configured partial dirs
 				for _, partial_dir in ipairs(config.partials_dirs) do
 					if name == partial_dir then
-						table.insert(partials_dirs, full_path)
+						-- Apply version context filtering if provided
+						if not version_context or path_matches_context(full_path, version_context, git_root) then
+							table.insert(partials_dirs, full_path)
+						end
 						break
 					end
 				end
@@ -44,6 +145,36 @@ local function get_all_partials_dirs()
 	end
 
 	scan_dir(git_root)
+
+	-- Sort partials: root docs folders first, then version-specific folders
+	table.sort(partials_dirs, function(a, b)
+		local a_rel = a:sub(#git_root + 2) -- Remove git root prefix
+		local b_rel = b:sub(#git_root + 2)
+
+		-- Check if paths match allowed_site_paths patterns (root docs folders)
+		local a_is_root = false
+		local b_is_root = false
+		for _, pattern in ipairs(config.allowed_site_paths) do
+			if a_rel:match(pattern) then
+				a_is_root = true
+			end
+			if b_rel:match(pattern) then
+				b_is_root = true
+			end
+		end
+
+		-- Root folders come first
+		if a_is_root and not b_is_root then
+			return true
+		end
+		if b_is_root and not a_is_root then
+			return false
+		end
+
+		-- Otherwise alphabetical
+		return a < b
+	end)
+
 	return partials_dirs
 end
 
@@ -58,8 +189,13 @@ function M.select_code_block()
 	local current_bufnr = vim.api.nvim_get_current_buf()
 	local current_win = vim.api.nvim_get_current_win()
 
-	-- Get all _partials directories
-	local partials_dirs = get_all_partials_dirs()
+	-- Get current file path and version context
+	local current_file = vim.api.nvim_buf_get_name(current_bufnr)
+	local git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
+	local version_context = get_version_context(current_file, git_root)
+
+	-- Get filtered _partials directories based on version context
+	local partials_dirs = get_all_partials_dirs(version_context, git_root)
 
 	if vim.tbl_isempty(partials_dirs) then
 		print("No _partials directories found in the repository.")
@@ -237,24 +373,6 @@ local function get_relative_path(from_dir, to_path)
 	return table.concat(result, "/")
 end
 
--- Function to get absolute URL path
-local function get_absolute_url_path(file_path)
-	-- Get git repository root
-	local git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
-
-	-- Remove git root from path and file extension
-	local url_path = file_path:sub(#git_root + 2) -- +2 to remove leading slash
-	url_path = vim.fn.fnamemodify(url_path, ":r")
-
-	-- Ensure forward slashes
-	url_path = url_path:gsub("\\", "/")
-
-	-- Add leading slash
-	url_path = "/" .. url_path
-
-	return url_path
-end
-
 -- Function to get language identifier from file extension
 local function get_language_from_extension(file_path)
 	local ext = vim.fn.fnamemodify(file_path, ":e"):lower()
@@ -278,6 +396,19 @@ function M.insert_partial_in_buffer(bufnr, partial_name, partial_path, is_raw_lo
 	-- Switch to the buffer
 	vim.api.nvim_set_current_buf(bufnr)
 
+	-- Check if import already exists
+	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+	local import_exists = false
+	for _, line in ipairs(lines) do
+		if line:match("^import") then
+			local import_name = line:match("^import%s+(%S+)%s+from")
+			if import_name == partial_name then
+				import_exists = true
+				break
+			end
+		end
+	end
+
 	-- Get the cursor position in the correct window
 	local cursor_position = vim.api.nvim_win_get_cursor(0)
 	local current_line = cursor_position[1]
@@ -300,11 +431,17 @@ function M.insert_partial_in_buffer(bufnr, partial_name, partial_path, is_raw_lo
 	-- Insert the component at the cursor position
 	vim.api.nvim_buf_set_lines(bufnr, current_line - 1, current_line - 1, false, { insert_text })
 
-	-- If this is a code block, position cursor at the end of the line
-	if is_raw_loader then
-		-- Position cursor at the end of the inserted line
-		local line_content = vim.api.nvim_buf_get_lines(bufnr, current_line - 1, current_line, false)[1]
-		vim.api.nvim_win_set_cursor(0, { current_line, #line_content })
+	-- Position cursor on the inserted component tag
+	local line_content = vim.api.nvim_buf_get_lines(bufnr, current_line - 1, current_line, false)[1]
+	-- Find the position of '<' in the inserted line
+	local tag_start = line_content:find("<")
+	if tag_start then
+		vim.api.nvim_win_set_cursor(0, { current_line, tag_start - 1 })
+	end
+
+	-- If import already exists, skip adding it
+	if import_exists then
+		return
 	end
 
 	-- Rest of the function (imports handling) remains the same
@@ -356,8 +493,8 @@ function M.insert_partial_in_buffer(bufnr, partial_name, partial_path, is_raw_lo
 		end
 	end
 
-	-- Get the buffer lines
-	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+	-- Get the buffer lines again (for import insertion)
+	lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 
 	local insert_pos = 1
 	local found_front_matter_start = false
@@ -398,8 +535,14 @@ end
 
 -- Function to insert URL reference at cursor
 local function insert_url_reference(bufnr, target_path)
-	-- Get URL path
-	local url_path = get_absolute_url_path(target_path)
+	-- Get current file directory
+	local current_file_path = vim.api.nvim_buf_get_name(bufnr)
+	local current_file_dir = vim.fn.fnamemodify(current_file_path, ":h")
+
+	-- Get relative path from current file to target, without extension
+	local url_path = get_relative_path(current_file_dir, target_path)
+	-- Remove file extension for clean URLs
+	url_path = vim.fn.fnamemodify(url_path, ":r")
 
 	-- Get the cursor position
 	local cursor_position = vim.api.nvim_win_get_cursor(0)
@@ -432,71 +575,125 @@ function M.select_partial()
 	local current_bufnr = vim.api.nvim_get_current_buf()
 	local current_win = vim.api.nvim_get_current_win()
 
-	-- Get all _partials directories
-	local partials_dirs = get_all_partials_dirs()
+	-- Get current file path and version context
+	local current_file = vim.api.nvim_buf_get_name(current_bufnr)
+	local git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
+	local version_context = get_version_context(current_file, git_root)
+
+	-- Get filtered _partials directories based on version context
+	local partials_dirs = get_all_partials_dirs(version_context, git_root)
 
 	if vim.tbl_isempty(partials_dirs) then
 		print("No _partials directories found in the repository.")
 		return
 	end
 
-	-- Use Telescope to browse partial files
-	require("telescope.builtin").find_files({
-		prompt_title = "Select Partial",
-		search_dirs = partials_dirs,
-		layout_strategy = "flex",
-		layout_config = {
-			flex = {
-				flip_columns = 120, -- Switch to vertical layout on smaller windows
-			},
-			horizontal = {
-				preview_width = 0.35, -- 35% for preview on the right
-				preview_cutoff = 0,
-				prompt_position = "top",
-				mirror = false, -- This ensures preview is on the right
-			},
-			width = 0.95,
-			height = 0.85,
-		},
-		sorting_strategy = "ascending",
-		path_display = function(opts, path)
-			-- Get the tail (filename) and calculate how much of the path we can show
-			local tail = require("telescope.utils").path_tail(path)
-			local local_git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
-
-			-- Remove git root from path to make it relative
-			local relative_path = path
-			if local_git_root and local_git_root ~= "" then
-				relative_path = path:sub(#local_git_root + 2) -- +2 to remove the leading slash
+	-- Collect all partial files and sort them
+	local all_files = {}
+	for _, dir in ipairs(partials_dirs) do
+		local function scan_files(directory)
+			local entries = vim.fn.readdir(directory)
+			for _, name in ipairs(entries) do
+				local full_path = directory .. "/" .. name
+				if vim.fn.isdirectory(full_path) == 1 then
+					scan_files(full_path)
+				elseif name:match("%.mdx?$") then
+					-- Check if file is from root docs folder
+					local relative_path = full_path:sub(#git_root + 2)
+					local is_root = false
+					for _, pattern in ipairs(config.allowed_site_paths) do
+						if relative_path:match(pattern) then
+							is_root = true
+							break
+						end
+					end
+					table.insert(all_files, {
+						path = full_path,
+						is_root = is_root,
+						relative_path = relative_path,
+					})
+				end
 			end
+		end
+		scan_files(dir)
+	end
 
-			-- Return a formatted display with more visible path
-			return string.format("%s  [%s]", tail, relative_path)
-		end,
-		attach_mappings = function(prompt_bufnr, map)
-			map("i", "<CR>", function()
-				local selection = require("telescope.actions.state").get_selected_entry()
-				local partial_path = selection.path
-
-				-- Generate default component name based on the file name
-				local partial_name = M.to_camel_case(partial_path)
-
-				-- Prompt for the component name with default value
-				partial_name = vim.fn.input("Name the partial: ", partial_name)
-
-				-- Close Telescope before switching back
-				require("telescope.actions").close(prompt_bufnr)
-
-				-- Switch back to the original window and buffer
-				vim.api.nvim_set_current_win(current_win)
-				vim.api.nvim_set_current_buf(current_bufnr)
-
-				-- Insert partial (always as regular import)
-				M.insert_partial_in_buffer(current_bufnr, partial_name, partial_path, false)
-			end)
+	-- Sort: root docs files first, then alphabetically
+	table.sort(all_files, function(a, b)
+		if a.is_root and not b.is_root then
 			return true
-		end,
-	})
+		end
+		if b.is_root and not a.is_root then
+			return false
+		end
+		return a.path < b.path
+	end)
+
+	-- Use Telescope with custom picker
+	local pickers = require("telescope.pickers")
+	local finders = require("telescope.finders")
+	local conf = require("telescope.config").values
+	local actions = require("telescope.actions")
+	local action_state = require("telescope.actions.state")
+
+	pickers
+		.new({}, {
+			prompt_title = "Select Partial",
+			finder = finders.new_table({
+				results = all_files,
+				entry_maker = function(entry)
+					local tail = require("telescope.utils").path_tail(entry.path)
+					local display = string.format("%s  [%s]", tail, entry.relative_path)
+					return {
+						value = entry.path,
+						display = display,
+						ordinal = entry.path,
+						path = entry.path,
+					}
+				end,
+			}),
+			sorter = conf.generic_sorter({}),
+			previewer = conf.file_previewer({}),
+			layout_strategy = "flex",
+			layout_config = {
+				flex = {
+					flip_columns = 120,
+				},
+				horizontal = {
+					preview_width = 0.35,
+					preview_cutoff = 0,
+					prompt_position = "top",
+					mirror = false,
+				},
+				width = 0.95,
+				height = 0.85,
+			},
+			sorting_strategy = "ascending",
+			attach_mappings = function(prompt_bufnr, map)
+				map("i", "<CR>", function()
+					local selection = action_state.get_selected_entry()
+					local partial_path = selection.path
+
+					-- Generate default component name based on the file name
+					local partial_name = M.to_camel_case(partial_path)
+
+					-- Prompt for the component name with default value
+					partial_name = vim.fn.input("Name the partial: ", partial_name)
+
+					-- Close Telescope before switching back
+					actions.close(prompt_bufnr)
+
+					-- Switch back to the original window and buffer
+					vim.api.nvim_set_current_win(current_win)
+					vim.api.nvim_set_current_buf(current_bufnr)
+
+					-- Insert partial (always as regular import)
+					M.insert_partial_in_buffer(current_bufnr, partial_name, partial_path, false)
+				end)
+				return true
+			end,
+		})
+		:find()
 end
 
 function M.insert_url_reference()
@@ -509,77 +706,106 @@ function M.insert_url_reference()
 		return
 	end
 
-	-- Change to git root directory
-	vim.fn.chdir(git_root)
+	-- Get current file path and version context
+	local current_file = vim.api.nvim_buf_get_name(current_bufnr)
+	local version_context = get_version_context(current_file, git_root)
 
-	require("telescope.builtin").find_files({
-		prompt_title = "Select MD(X) File to Reference",
-		search_dirs = { "." }, -- Search from current (git root) directory
-		find_command = {
-			"find",
-			".",
-			"-type",
-			"f",
-			"(",
-			"-name",
-			"*.md",
-			"-o",
-			"-name",
-			"*.mdx",
-			")",
-			"!",
-			"-path",
-			"*/_*/*",
-		},
-		layout_strategy = "flex",
-		layout_config = {
-			flex = {
-				flip_columns = 120, -- Switch to vertical layout on smaller windows
-			},
-			horizontal = {
-				preview_width = 0.35, -- 35% for preview on the right
-				preview_cutoff = 0,
-				prompt_position = "top",
-				mirror = false, -- This ensures preview is on the right
-			},
-			width = 0.95,
-			height = 0.85,
-		},
-		sorting_strategy = "ascending",
-		path_display = function(opts, path)
-			-- Get the tail (filename) and calculate how much of the path we can show
-			local tail = require("telescope.utils").path_tail(path)
-			local local_git_root = vim.fn.system("git rev-parse --show-toplevel"):gsub("%s+", "")
+	-- Build search paths based on version context
+	local search_paths = {}
+	if version_context.type == "versioned" and version_context.folder then
+		-- Add version-specific folder only
+		-- URLs should only reference docs from the same version
+		table.insert(search_paths, git_root .. "/" .. version_context.folder)
+	elseif version_context.type == "main" and version_context.project then
+		-- Add main project folder only
+		-- URLs should only reference docs from the same project
+		table.insert(search_paths, git_root .. "/" .. version_context.project)
+	else
+		-- No version/project context, search entire git root
+		search_paths = { git_root }
+	end
 
-			-- Remove git root from path to make it relative
-			local relative_path = path
-			if local_git_root and local_git_root ~= "" then
-				relative_path = path:sub(#local_git_root + 2) -- +2 to remove the leading slash
+	-- Use Lua to collect matching files from search paths
+	local function collect_md_files()
+		local files = {}
+		for _, search_path in ipairs(search_paths) do
+			local function scan_dir(dir)
+				local entries = vim.fn.readdir(dir)
+				for _, name in ipairs(entries) do
+					local full_path = dir .. "/" .. name
+					if vim.fn.isdirectory(full_path) == 1 then
+						-- Skip underscore directories
+						if not name:match("^_") and name ~= ".git" and name ~= "node_modules" then
+							scan_dir(full_path)
+						end
+					elseif name:match("%.mdx?$") then
+						table.insert(files, full_path)
+					end
+				end
 			end
-
-			-- For URL references, also remove the leading "./"
-			if relative_path:sub(1, 2) == "./" then
-				relative_path = relative_path:sub(3)
+			if vim.fn.isdirectory(search_path) == 1 then
+				scan_dir(search_path)
 			end
+		end
+		return files
+	end
 
-			-- Return a formatted display with more visible path
-			return string.format("%s  [%s]", tail, relative_path)
-		end,
-		attach_mappings = function(prompt_bufnr, map)
-			map("i", "<CR>", function()
-				local selection = require("telescope.actions.state").get_selected_entry()
-				local file_path = selection.path
-				require("telescope.actions").close(prompt_bufnr)
-				vim.api.nvim_set_current_win(current_win)
-				vim.api.nvim_set_current_buf(current_bufnr)
-				insert_url_reference(current_bufnr, file_path)
-			end)
-			return true
-		end,
-	})
+	local md_files = collect_md_files()
 
-	-- Change back to original directory
-	vim.fn.chdir("-")
+	local pickers = require("telescope.pickers")
+	local finders = require("telescope.finders")
+	local conf = require("telescope.config").values
+	local actions = require("telescope.actions")
+	local action_state = require("telescope.actions.state")
+
+	pickers
+		.new({}, {
+			prompt_title = "Select MD(X) File to Reference",
+			finder = finders.new_table({
+				results = md_files,
+				entry_maker = function(entry)
+					local display_path = entry
+					if git_root and entry:sub(1, #git_root) == git_root then
+						display_path = entry:sub(#git_root + 2)
+					end
+					return {
+						value = entry,
+						display = display_path,
+						ordinal = display_path,
+						path = entry,
+					}
+				end,
+			}),
+			sorter = conf.generic_sorter({}),
+			previewer = conf.file_previewer({}),
+			layout_strategy = "flex",
+			layout_config = {
+				flex = {
+					flip_columns = 120, -- Switch to vertical layout on smaller windows
+				},
+				horizontal = {
+					preview_width = 0.35, -- 35% for preview on the right
+					preview_cutoff = 0,
+					prompt_position = "top",
+					mirror = false, -- This ensures preview is on the right
+				},
+				width = 0.95,
+				height = 0.85,
+			},
+			sorting_strategy = "ascending",
+			attach_mappings = function(prompt_bufnr)
+				actions.select_default:replace(function()
+					local selection = action_state.get_selected_entry()
+					local file_path = selection.path
+					actions.close(prompt_bufnr)
+					vim.api.nvim_set_current_win(current_win)
+					vim.api.nvim_set_current_buf(current_bufnr)
+					insert_url_reference(current_bufnr, file_path)
+				end)
+				return true
+			end,
+		})
+		:find()
 end
 
 -- Function to insert component in buffer
@@ -746,7 +972,6 @@ end
 function M.get_config()
 	return config
 end
-
 
 -- ========================================
 -- Plugin Scaffolder Functions
@@ -958,11 +1183,27 @@ function M.get_config_options(version, mock_content)
 	if not content then
 		local url =
 			"https://raw.githubusercontent.com/facebook/docusaurus/main/website/docs/api/docusaurus.config.js.mdx"
-		local curl_cmd = string.format("curl -s '%s'", url)
-		content = vim.fn.system(curl_cmd)
+
+		-- Try curl first (Linux/Mac/WSL), then wget (fallback), then PowerShell (Windows)
+		local fetch_commands = {
+			string.format("curl -sL '%s'", url),
+			string.format("wget -qO- '%s'", url),
+			string.format(
+				"powershell -Command \"Invoke-WebRequest -Uri '%s' -UseBasicParsing | Select-Object -ExpandProperty Content\"",
+				url
+			),
+		}
+
+		for _, cmd in ipairs(fetch_commands) do
+			content = vim.fn.system(cmd)
+			if vim.v.shell_error == 0 and content ~= "" then
+				break
+			end
+		end
 
 		if vim.v.shell_error ~= 0 or content == "" then
 			print("Failed to fetch Docusaurus config documentation from GitHub")
+			print("Please ensure curl, wget, or PowerShell is available")
 			return {}
 		end
 	end
@@ -1127,5 +1368,9 @@ function M.browse_api()
 		})
 		:find()
 end
+
+-- Expose internal functions for testing
+M.get_version_context = get_version_context
+M.path_matches_context = path_matches_context
 
 return M

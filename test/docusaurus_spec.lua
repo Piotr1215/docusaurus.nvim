@@ -79,7 +79,7 @@ describe("docusaurus.nvim", function()
 			local config = docusaurus.get_config()
 			assert.are.same({ "_partials", "_fragments", "_code" }, config.partials_dirs)
 			assert.is_nil(config.components_dir) -- Should be nil, will default at runtime
-			assert.are.same({ "^docs/_partials/", "^docs/_fragments/", "^docs/_code/" }, config.allowed_site_paths)
+			assert.are.same({ "^docs/_" }, config.allowed_site_paths)
 		end)
 	end)
 
@@ -394,6 +394,56 @@ describe("docusaurus.nvim", function()
 			-- Reset to defaults
 			docusaurus.setup({})
 		end)
+
+		it("should not insert duplicate import if name already exists", function()
+			-- First, insert a partial
+			docusaurus.insert_partial_in_buffer(
+				test_bufnr,
+				"DuplicateTest",
+				mock_git_root .. "/docs/_partials/test.mdx",
+				false
+			)
+
+			local lines_before = vim.api.nvim_buf_get_lines(test_bufnr, 0, -1, false)
+			local import_count_before = 0
+			local component_count_before = 0
+			for _, line in ipairs(lines_before) do
+				if line:match("import DuplicateTest from") then
+					import_count_before = import_count_before + 1
+				end
+				if line:match("<DuplicateTest />") then
+					component_count_before = component_count_before + 1
+				end
+			end
+
+			-- Try to insert the same import name again (different path)
+			docusaurus.insert_partial_in_buffer(
+				test_bufnr,
+				"DuplicateTest",
+				mock_git_root .. "/docs/_partials/another-test.mdx",
+				false
+			)
+
+			local lines_after = vim.api.nvim_buf_get_lines(test_bufnr, 0, -1, false)
+			local import_count_after = 0
+			local component_count_after = 0
+			for _, line in ipairs(lines_after) do
+				if line:match("import DuplicateTest from") then
+					import_count_after = import_count_after + 1
+				end
+				if line:match("<DuplicateTest />") then
+					component_count_after = component_count_after + 1
+				end
+			end
+
+			-- Should still have only one import
+			assert.are.equal(1, import_count_before)
+			assert.are.equal(1, import_count_after)
+
+			-- But should have two component tags
+			assert.are.equal(1, component_count_before)
+			assert.are.equal(2, component_count_after)
+		end)
 	end)
 
 	describe("code block language detection", function()
@@ -599,6 +649,279 @@ describe("docusaurus.nvim", function()
 		end)
 	end)
 
+	describe("version context detection", function()
+		it("should detect versioned vcluster folder", function()
+			local context = docusaurus.get_version_context(
+				"/repo/vcluster_versioned_docs/version-0.20.x/install/quick-start.mdx",
+				"/repo"
+			)
+
+			assert.are.equal("versioned", context.type)
+			assert.are.equal("vcluster", context.project)
+			assert.are.equal("vcluster_versioned_docs/version-0.20.x", context.folder)
+		end)
+
+		it("should detect versioned platform folder", function()
+			local context =
+				docusaurus.get_version_context("/repo/platform_versioned_docs/version-4.4.0/api/config.mdx", "/repo")
+
+			assert.are.equal("versioned", context.type)
+			assert.are.equal("platform", context.project)
+			assert.are.equal("platform_versioned_docs/version-4.4.0", context.folder)
+		end)
+
+		it("should detect main vcluster folder", function()
+			local context = docusaurus.get_version_context("/repo/vcluster/install/quick-start.mdx", "/repo")
+
+			assert.are.equal("main", context.type)
+			assert.are.equal("vcluster", context.project)
+		end)
+
+		it("should detect main platform folder", function()
+			local context = docusaurus.get_version_context("/repo/platform/api/config.mdx", "/repo")
+
+			assert.are.equal("main", context.type)
+			assert.are.equal("platform", context.project)
+		end)
+
+		it("should detect non-versioned root folder", function()
+			local context = docusaurus.get_version_context("/repo/docs/getting-started.mdx", "/repo")
+
+			assert.are.equal("non-versioned", context.type)
+			assert.is_nil(context.project)
+		end)
+
+		it("should handle empty file path", function()
+			local context = docusaurus.get_version_context("", "/repo")
+
+			assert.are.equal("non-versioned", context.type)
+		end)
+
+		it("should handle nil file path", function()
+			local context = docusaurus.get_version_context(nil, "/repo")
+
+			assert.are.equal("non-versioned", context.type)
+		end)
+
+		it("should handle deeply nested versioned paths", function()
+			local context = docusaurus.get_version_context(
+				"/repo/vcluster_versioned_docs/version-0.19.x/deploy/advanced/multi-cluster/deep/nested/file.mdx",
+				"/repo"
+			)
+
+			assert.are.equal("versioned", context.type)
+			assert.are.equal("vcluster", context.project)
+			assert.are.equal("vcluster_versioned_docs/version-0.19.x", context.folder)
+		end)
+	end)
+
+	describe("allowed_site_paths pattern matching", function()
+		it("should match docs/_partials/ with pattern ^docs/_", function()
+			local context = {
+				type = "versioned",
+				folder = "vcluster_versioned_docs/version-0.20.x",
+				project = "vcluster",
+			}
+
+			-- Reset to default config
+			docusaurus.setup({})
+
+			local matches = docusaurus.path_matches_context("/repo/docs/_partials/install.mdx", context, "/repo")
+			assert.is_true(matches)
+		end)
+
+		it("should match docs/_fragments/ with pattern ^docs/_", function()
+			local context = {
+				type = "versioned",
+				folder = "vcluster_versioned_docs/version-0.20.x",
+				project = "vcluster",
+			}
+
+			docusaurus.setup({})
+
+			local matches = docusaurus.path_matches_context("/repo/docs/_fragments/intro.mdx", context, "/repo")
+			assert.is_true(matches)
+		end)
+
+		it("should match docs/_code/ with pattern ^docs/_", function()
+			local context = {
+				type = "versioned",
+				folder = "vcluster_versioned_docs/version-0.20.x",
+				project = "vcluster",
+			}
+
+			docusaurus.setup({})
+
+			local matches = docusaurus.path_matches_context("/repo/docs/_code/example.yaml", context, "/repo")
+			assert.is_true(matches)
+		end)
+
+		it("should match docs/_anything/ with pattern ^docs/_", function()
+			local context = {
+				type = "versioned",
+				folder = "vcluster_versioned_docs/version-0.20.x",
+				project = "vcluster",
+			}
+
+			docusaurus.setup({})
+
+			local matches = docusaurus.path_matches_context("/repo/docs/_snippets/test.mdx", context, "/repo")
+			assert.is_true(matches)
+		end)
+
+		it("should not match docs/regular/ (no underscore) with pattern ^docs/_", function()
+			local context = {
+				type = "versioned",
+				folder = "vcluster_versioned_docs/version-0.20.x",
+				project = "vcluster",
+			}
+
+			docusaurus.setup({})
+
+			local matches = docusaurus.path_matches_context("/repo/docs/regular/guide.mdx", context, "/repo")
+			-- Should not match because it's not an underscore directory
+			-- and it's not in the version folder
+			assert.is_false(matches)
+		end)
+	end)
+
+	describe("path filtering", function()
+		it("should match same version folder", function()
+			local context = {
+				type = "versioned",
+				folder = "vcluster_versioned_docs/version-0.20.x",
+				project = "vcluster",
+			}
+
+			local matches = docusaurus.path_matches_context(
+				"/repo/vcluster_versioned_docs/version-0.20.x/install/guide.mdx",
+				context,
+				"/repo"
+			)
+
+			assert.is_true(matches)
+		end)
+
+		it("should exclude different version folder", function()
+			local context = {
+				type = "versioned",
+				folder = "vcluster_versioned_docs/version-0.20.x",
+				project = "vcluster",
+			}
+
+			local matches = docusaurus.path_matches_context(
+				"/repo/vcluster_versioned_docs/version-0.19.x/install/guide.mdx",
+				context,
+				"/repo"
+			)
+
+			assert.is_false(matches)
+		end)
+
+		it("should include non-versioned docs folder from versioned context", function()
+			local context = {
+				type = "versioned",
+				folder = "vcluster_versioned_docs/version-0.20.x",
+				project = "vcluster",
+			}
+
+			local matches = docusaurus.path_matches_context("/repo/docs/_partials/install.mdx", context, "/repo")
+
+			assert.is_true(matches)
+		end)
+
+		it("should match same main project folder", function()
+			local context = {
+				type = "main",
+				project = "vcluster",
+			}
+
+			local matches = docusaurus.path_matches_context("/repo/vcluster/install/quick-start.mdx", context, "/repo")
+
+			assert.is_true(matches)
+		end)
+
+		it("should exclude different main project folder", function()
+			local context = {
+				type = "main",
+				project = "vcluster",
+			}
+
+			local matches = docusaurus.path_matches_context("/repo/platform/api/config.mdx", context, "/repo")
+
+			assert.is_false(matches)
+		end)
+
+		it("should exclude versioned folders from main context", function()
+			local context = {
+				type = "main",
+				project = "vcluster",
+			}
+
+			local matches = docusaurus.path_matches_context(
+				"/repo/vcluster_versioned_docs/version-0.20.x/install/guide.mdx",
+				context,
+				"/repo"
+			)
+
+			assert.is_false(matches)
+		end)
+
+		it("should include non-versioned docs from main context", function()
+			local context = {
+				type = "main",
+				project = "vcluster",
+			}
+
+			local matches = docusaurus.path_matches_context("/repo/docs/_partials/install.mdx", context, "/repo")
+
+			assert.is_true(matches)
+		end)
+
+		it("should match all paths in non-versioned context", function()
+			local context = {
+				type = "non-versioned",
+			}
+
+			assert.is_true(docusaurus.path_matches_context("/repo/vcluster/install/guide.mdx", context, "/repo"))
+			assert.is_true(docusaurus.path_matches_context("/repo/platform/api/config.mdx", context, "/repo"))
+			assert.is_true(
+				docusaurus.path_matches_context(
+					"/repo/vcluster_versioned_docs/version-0.20.x/guide.mdx",
+					context,
+					"/repo"
+				)
+			)
+		end)
+
+		it("should handle empty path", function()
+			local context = { type = "main", project = "vcluster" }
+
+			local matches = docusaurus.path_matches_context("", context, "/repo")
+
+			assert.is_false(matches)
+		end)
+
+		it("should handle nil path", function()
+			local context = { type = "main", project = "vcluster" }
+
+			local matches = docusaurus.path_matches_context(nil, context, "/repo")
+
+			assert.is_false(matches)
+		end)
+
+		it("should match multiple allowed_site_paths patterns", function()
+			local context = {
+				type = "versioned",
+				folder = "vcluster_versioned_docs/version-0.20.x",
+				project = "vcluster",
+			}
+
+			assert.is_true(docusaurus.path_matches_context("/repo/docs/_partials/file.mdx", context, "/repo"))
+			assert.is_true(docusaurus.path_matches_context("/repo/docs/_fragments/file.mdx", context, "/repo"))
+			assert.is_true(docusaurus.path_matches_context("/repo/docs/_code/example.yaml", context, "/repo"))
+		end)
+	end)
 
 	describe("plugin scaffolder", function()
 		it("should generate lifecycle plugin template", function()
@@ -734,6 +1057,141 @@ export default {
 			assert.are.equal("string", first_option.type)
 			assert.are.equal("Title for your website.", first_option.description)
 			assert.are.equal("https://docusaurus.io/docs/api/docusaurus-config#title", first_option.url)
+		end)
+	end)
+
+	describe("partials directory sorting", function()
+		it("should sort root docs directories before versioned directories", function()
+			-- Mock a list of partial directories
+			local dirs = {
+				"/repo/vcluster_versioned_docs/version-0.20.x/_partials",
+				"/repo/docs/_partials",
+				"/repo/platform_versioned_docs/version-4.3.0/_partials",
+				"/repo/docs/_fragments",
+			}
+
+			-- Reset to default config
+			docusaurus.setup({})
+			local config = docusaurus.get_config()
+
+			-- Sort using the same logic as get_all_partials_dirs
+			local git_root = "/repo"
+			table.sort(dirs, function(a, b)
+				local a_rel = a:sub(#git_root + 2)
+				local b_rel = b:sub(#git_root + 2)
+
+				local a_is_root = false
+				local b_is_root = false
+				for _, pattern in ipairs(config.allowed_site_paths) do
+					if a_rel:match(pattern) then
+						a_is_root = true
+					end
+					if b_rel:match(pattern) then
+						b_is_root = true
+					end
+				end
+
+				if a_is_root and not b_is_root then
+					return true
+				end
+				if b_is_root and not a_is_root then
+					return false
+				end
+				return a < b
+			end)
+
+			-- Check that root docs directories come first
+			assert.is_not_nil(dirs[1]:match("^/repo/docs/_"))
+			assert.is_not_nil(dirs[2]:match("^/repo/docs/_"))
+			assert.is_nil(dirs[3]:match("^/repo/docs/_"))
+			assert.is_nil(dirs[4]:match("^/repo/docs/_"))
+		end)
+
+		it("should identify root files correctly", function()
+			docusaurus.setup({})
+			local config = docusaurus.get_config()
+			local git_root = "/repo"
+
+			-- Test root file
+			local path1 = "/repo/docs/_partials/install.mdx"
+			local rel1 = path1:sub(#git_root + 2)
+			local is_root1 = false
+			for _, pattern in ipairs(config.allowed_site_paths) do
+				if rel1:match(pattern) then
+					is_root1 = true
+					break
+				end
+			end
+			assert.is_true(is_root1)
+
+			-- Test versioned file
+			local path2 = "/repo/vcluster_versioned_docs/version-0.20.x/_partials/config.mdx"
+			local rel2 = path2:sub(#git_root + 2)
+			local is_root2 = false
+			for _, pattern in ipairs(config.allowed_site_paths) do
+				if rel2:match(pattern) then
+					is_root2 = true
+					break
+				end
+			end
+			assert.is_false(is_root2)
+		end)
+	end)
+
+	describe("url reference filtering", function()
+		it("should only include version-specific docs for versioned context", function()
+			-- This tests that URL references don't include root docs/ folder
+			-- when in versioned context (unlike partials which do include them)
+			local context = {
+				type = "versioned",
+				folder = "vcluster_versioned_docs/version-0.20.x",
+				project = "vcluster",
+			}
+
+			-- URL references should match only version folder
+			local matches_version = docusaurus.path_matches_context(
+				"/repo/vcluster_versioned_docs/version-0.20.x/guide.mdx",
+				context,
+				"/repo"
+			)
+			assert.is_true(matches_version)
+
+			-- But partials from docs/ should still match for imports
+			local matches_partial =
+				docusaurus.path_matches_context("/repo/docs/_partials/install.mdx", context, "/repo")
+			assert.is_true(matches_partial)
+
+			-- Regular docs should not match
+			local matches_regular = docusaurus.path_matches_context("/repo/docs/guide.mdx", context, "/repo")
+			assert.is_false(matches_regular)
+		end)
+
+		it("should only include main project docs for main context", function()
+			local context = {
+				type = "main",
+				project = "vcluster",
+			}
+
+			-- Should match main project folder
+			local matches_main = docusaurus.path_matches_context("/repo/vcluster/guide.mdx", context, "/repo")
+			assert.is_true(matches_main)
+
+			-- Should match root partials
+			local matches_partial =
+				docusaurus.path_matches_context("/repo/docs/_partials/install.mdx", context, "/repo")
+			assert.is_true(matches_partial)
+
+			-- Should not match other projects
+			local matches_other = docusaurus.path_matches_context("/repo/platform/guide.mdx", context, "/repo")
+			assert.is_false(matches_other)
+
+			-- Should not match versioned folders
+			local matches_versioned = docusaurus.path_matches_context(
+				"/repo/vcluster_versioned_docs/version-0.20.x/guide.mdx",
+				context,
+				"/repo"
+			)
+			assert.is_false(matches_versioned)
 		end)
 	end)
 end)
