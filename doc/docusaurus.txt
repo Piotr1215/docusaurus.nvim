@@ -14,17 +14,20 @@ CONTENTS                                                    *docusaurus-contents
 ==============================================================================
 1. INTRODUCTION                                         *docusaurus-introduction*
 
-docusaurus.nvim is a Neovim plugin that provides convenient ways to insert
-components, partials, code blocks, and URL references in your Docusaurus MDX
-files.
+docusaurus.nvim is a comprehensive Neovim plugin that supercharges your
+Docusaurus documentation workflow with intelligent content insertion, plugin
+management, and development tools.
 
 Features:
 - Insert components from your components directory
 - Insert partials from _partials, _fragments, or _code directories
 - Insert code blocks with raw-loader imports
 - Insert URL references to other documentation files
-- Smart import management
-- Telescope integration for browsing files
+- Browse and install popular Docusaurus plugins
+- Scaffold new Docusaurus plugins with templates
+- Browse Docusaurus configuration API
+- Smart import management (@site vs relative)
+- Telescope integration for fuzzy finding
 
 ==============================================================================
 2. REQUIREMENTS                                         *docusaurus-requirements*
@@ -80,6 +83,8 @@ Example configuration: >lua
 ==============================================================================
 5. COMMANDS                                                *docusaurus-commands*
 
+Content Insertion Commands ~
+
 :DocusaurusInsertComponent                      *:DocusaurusInsertComponent*
     Browse and insert a component from the components directory.
 
@@ -92,30 +97,54 @@ Example configuration: >lua
 :DocusaurusInsertURL                                  *:DocusaurusInsertURL*
     Insert a URL reference to another documentation file.
 
+Plugin Management Commands ~
+
+:DocusaurusCreatePlugin                            *:DocusaurusCreatePlugin*
+    Scaffold a new Docusaurus plugin. Prompts for plugin name and type
+    (lifecycle, content, or theme), then creates the plugin directory
+    structure with boilerplate code.
+
+:DocusaurusBrowseAPI                                  *:DocusaurusBrowseAPI*
+    Browse Docusaurus configuration API options. Shows available config
+    options with types, descriptions, and examples. Automatically detects
+    Docusaurus version from package.json.
+
 ==============================================================================
 6. MAPPINGS                                                *docusaurus-mappings*
 
 This plugin doesn't set any default mappings. You can create your own mappings
 like this:
 
->lua
-  vim.keymap.set("n", "<leader>ic", "<cmd>DocusaurusInsertComponent<cr>", 
+Content Insertion Mappings: >lua
+  vim.keymap.set("n", "<leader>ic", "<cmd>DocusaurusInsertComponent<cr>",
     { desc = "Insert Docusaurus Component" })
-  vim.keymap.set("n", "<leader>ip", "<cmd>DocusaurusInsertPartial<cr>", 
+  vim.keymap.set("n", "<leader>ip", "<cmd>DocusaurusInsertPartial<cr>",
     { desc = "Insert Docusaurus Partial" })
-  vim.keymap.set("n", "<leader>ib", "<cmd>DocusaurusInsertCodeBlock<cr>", 
+  vim.keymap.set("n", "<leader>ib", "<cmd>DocusaurusInsertCodeBlock<cr>",
     { desc = "Insert Docusaurus CodeBlock" })
-  vim.keymap.set("n", "<leader>iu", "<cmd>DocusaurusInsertURL<cr>", 
+  vim.keymap.set("n", "<leader>iu", "<cmd>DocusaurusInsertURL<cr>",
     { desc = "Insert Docusaurus URL Reference" })
+<
+
+Plugin Management Mappings: >lua
+  vim.keymap.set("n", "<leader>dpc", "<cmd>DocusaurusCreatePlugin<cr>",
+    { desc = "Create Docusaurus Plugin" })
+  vim.keymap.set("n", "<leader>dpa", "<cmd>DocusaurusBrowseAPI<cr>",
+    { desc = "Browse Docusaurus API" })
 <
 
 ==============================================================================
 7. API                                                          *docusaurus-api*
 
-The following functions are available:
+Setup ~
 
 docusaurus.setup({config})                                  *docusaurus.setup()*
     Setup the plugin with the given configuration.
+
+docusaurus.get_config()                                  *docusaurus.get_config()*
+    Get the current plugin configuration.
+
+Content Insertion Functions ~
 
 docusaurus.select_component()                      *docusaurus.select_component()*
     Open Telescope picker to select and insert a component.
@@ -128,6 +157,34 @@ docusaurus.select_code_block()                    *docusaurus.select_code_block(
 
 docusaurus.insert_url_reference()              *docusaurus.insert_url_reference()*
     Open Telescope picker to select a file and insert URL reference.
+
+Plugin Management Functions ~
+
+docusaurus.create_plugin()                            *docusaurus.create_plugin()*
+    Interactively scaffold a new Docusaurus plugin.
+
+docusaurus.browse_api()                                  *docusaurus.browse_api()*
+    Browse Docusaurus configuration API options in Telescope.
+
+Utility Functions ~
+
+docusaurus.generate_plugin_template({opts}) *docusaurus.generate_plugin_template()*
+    Generate plugin boilerplate code.
+    Parameters: ~
+      {opts}  Table with 'name' and 'type' fields
+
+docusaurus.scaffold_plugin({opts})                *docusaurus.scaffold_plugin()*
+    Create a plugin directory structure with files.
+    Parameters: ~
+      {opts}  Table with 'name', 'type', and optional 'write_file' fields
+
+docusaurus.get_docusaurus_version()          *docusaurus.get_docusaurus_version()*
+    Get Docusaurus version from package.json.
+
+docusaurus.get_config_options({version})      *docusaurus.get_config_options()*
+    Get configuration options for a Docusaurus version.
+    Parameters: ~
+      {version}  Docusaurus version string (e.g., "3.0.0")
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:

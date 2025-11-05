@@ -13,7 +13,12 @@ Streamline your Docusaurus documentation workflow in Neovim.
 
 ## What is docusaurus.nvim?
 
-`docusaurus.nvim` is a Neovim plugin that enhances your Docusaurus documentation workflow by providing smart insertion of components, partials, code blocks, and URL references. Built on top of telescope.nvim, it offers fuzzy finding capabilities with automatic import management for MDX files.
+`docusaurus.nvim` is a comprehensive Neovim plugin that supercharges your Docusaurus documentation workflow. Built on top of telescope.nvim, it provides:
+
+- **Smart Content Insertion**: Browse and insert components, partials, code blocks, and URL references with automatic import management
+- **Plugin Development**: Scaffold new Docusaurus plugins with proper directory structure and boilerplate code
+- **API Browser**: Explore Docusaurus configuration options with inline documentation and examples
+- **Intelligent Imports**: Automatic detection of `@site` vs relative imports based on your project structure
 
 ## Table of contents
 
@@ -72,12 +77,21 @@ The plugin works out of the box with sensible defaults if your project follows t
 
 ## Commands
 
+### Content Insertion Commands
+
 | Command | Description |
 |---------|-------------|
 | `:DocusaurusInsertComponent` | Browse and insert a component from `src/components` |
 | `:DocusaurusInsertPartial` | Browse and insert a partial from `_partials`, `_fragments`, or `_code` directories |
 | `:DocusaurusInsertCodeBlock` | Insert a code block with raw-loader import |
 | `:DocusaurusInsertURL` | Insert a markdown link to another documentation file |
+
+### Plugin Management Commands
+
+| Command | Description |
+|---------|-------------|
+| `:DocusaurusCreatePlugin` | Scaffold a new Docusaurus plugin with proper directory structure |
+| `:DocusaurusBrowseAPI` | Browse Docusaurus configuration API options with examples |
 
 ## Configuration
 
@@ -115,10 +129,15 @@ require("docusaurus").setup({
 This plugin doesn't set any default keymaps. You can set your own keymaps like this:
 
 ```lua
+-- Content insertion keymaps
 vim.keymap.set("n", "<leader>ic", "<cmd>DocusaurusInsertComponent<cr>", { desc = "Insert Docusaurus Component" })
 vim.keymap.set("n", "<leader>ip", "<cmd>DocusaurusInsertPartial<cr>", { desc = "Insert Docusaurus Partial" })
 vim.keymap.set("n", "<leader>ib", "<cmd>DocusaurusInsertCodeBlock<cr>", { desc = "Insert Docusaurus CodeBlock" })
 vim.keymap.set("n", "<leader>iu", "<cmd>DocusaurusInsertURL<cr>", { desc = "Insert Docusaurus URL Reference" })
+
+-- Plugin management keymaps
+vim.keymap.set("n", "<leader>dpc", "<cmd>DocusaurusCreatePlugin<cr>", { desc = "Create Docusaurus Plugin" })
+vim.keymap.set("n", "<leader>dpa", "<cmd>DocusaurusBrowseAPI<cr>", { desc = "Browse Docusaurus API" })
 ```
 
 ## Usage examples
@@ -162,6 +181,30 @@ Here's an example configuration:
 <CodeBlock language="yaml" title="Example Config">{ConfigExample}</CodeBlock>
 ```
 
+### Create a custom plugin
+
+```
+:DocusaurusCreatePlugin
+
+<!-- Prompts for plugin name: "my-analytics-plugin" -->
+<!-- Choose plugin type: Lifecycle, Content, or Theme -->
+<!-- Creates: -->
+<!--   plugins/my-analytics-plugin/
+<!--     ├── index.js
+<!--     └── package.json
+<!-- -->
+```
+
+### Browse configuration API
+
+```
+:DocusaurusBrowseAPI
+
+<!-- Opens Telescope with all Docusaurus config options -->
+<!-- Fetches latest API documentation from Docusaurus GitHub repo -->
+<!-- Shows type, description, example, and documentation URL -->
+<!-- Press Enter to open the official documentation in your browser -->
+```
 
 ## How it works
 
@@ -197,20 +240,22 @@ The following functions are available for programmatic use:
 ```lua
 local docusaurus = require("docusaurus")
 
--- Insert a component
-docusaurus.select_component()
+-- Content insertion functions
+docusaurus.select_component()          -- Browse and insert components
+docusaurus.select_partial()            -- Browse and insert partials
+docusaurus.select_code_block()         -- Browse and insert code blocks
+docusaurus.insert_url_reference()      -- Insert markdown URL reference
 
--- Insert a partial
-docusaurus.select_partial()
+-- Plugin management functions
+docusaurus.create_plugin()             -- Scaffold a new plugin
+docusaurus.browse_api()                -- Browse Docusaurus API
 
--- Insert a code block
-docusaurus.select_code_block()
-
--- Insert a URL reference
-docusaurus.insert_url_reference()
-
--- Get current configuration
-local config = docusaurus.get_config()
+-- Utility functions
+docusaurus.generate_plugin_template(opts)  -- Generate plugin template code
+docusaurus.scaffold_plugin(opts)       -- Create plugin directory structure
+docusaurus.get_docusaurus_version()    -- Get Docusaurus version from package.json
+docusaurus.get_config_options(version) -- Get config options for version
+docusaurus.get_config()                -- Get current plugin configuration
 ```
 
 ## License
